@@ -8,7 +8,7 @@ export default defineConfig({
     {
       name: 'sf-proxy',
       configureServer(server) {
-        server.middlewares.use('/proxy', (req, res, next) => {
+        server.middlewares.use('/api/proxy', (req, res, next) => {
           const targetUrl = req.headers['x-target-url'];
           
           if (!targetUrl) {

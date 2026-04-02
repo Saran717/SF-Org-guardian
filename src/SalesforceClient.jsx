@@ -33,7 +33,7 @@ class SalesforceClient {
   async query(soql) {
     try {
       const targetUrl = `${this.baseUrl}/query?q=${encodeURIComponent(soql)}`;
-      const response = await axios.get('/proxy', {
+      const response = await axios.get('/api/proxy', {
         headers: {
           'x-target-url': targetUrl,
           Authorization: `Bearer ${this.accessToken}`,
@@ -51,7 +51,7 @@ class SalesforceClient {
   async toolingQuery(soql) {
     try {
       const targetUrl = `${this.baseUrl}/tooling/query?q=${encodeURIComponent(soql)}`;
-      const response = await axios.get('/proxy', {
+      const response = await axios.get('/api/proxy', {
         headers: {
           'x-target-url': targetUrl,
           Authorization: `Bearer ${this.accessToken}`,
@@ -69,7 +69,7 @@ class SalesforceClient {
   async getLimits() {
     try {
       const targetUrl = `${this.baseUrl}/limits`;
-      const response = await axios.get('/proxy', {
+      const response = await axios.get('/api/proxy', {
         headers: {
           'x-target-url': targetUrl,
           Authorization: `Bearer ${this.accessToken}`,
@@ -117,7 +117,7 @@ class SalesforceClient {
 
     try {
       const targetUrl = `${loginUrl}/services/oauth2/token`;
-      const response = await axios.post('/proxy', params.toString(), {
+      const response = await axios.post('/api/proxy', params.toString(), {
         headers: { 
           'x-target-url': targetUrl,
           'Content-Type': 'application/x-www-form-urlencoded' 
@@ -127,7 +127,7 @@ class SalesforceClient {
       return response.data; // { access_token, instance_url }
     } catch (err) {
       console.error('Token exchange failed:', err.response?.data || err.message);
-      throw new Error(err.response?.data?.error_description || 'Token Exchange Failed through local proxy. Ensure credentials are correct.');
+      throw new Error(err.response?.data?.error_description || 'Token Exchange Failed. Ensure credentials and Salesforce CORS settings are correct.');
     }
   }
 
@@ -142,7 +142,7 @@ class SalesforceClient {
 
     try {
       const targetUrl = `${loginUrl}/services/oauth2/token`;
-      const response = await axios.post('/proxy', params.toString(), {
+      const response = await axios.post('/api/proxy', params.toString(), {
         headers: { 
           'x-target-url': targetUrl,
           'Content-Type': 'application/x-www-form-urlencoded' 
