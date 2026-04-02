@@ -41,7 +41,7 @@ export default function handler(req, res) {
     // Set headers and status
     res.writeHead(clientRes.statusCode, resHeaders);
     
-    // Pipe response
+    // Pipe response from Salesforce back to the browser
     clientRes.pipe(res);
   });
 
@@ -50,17 +50,13 @@ export default function handler(req, res) {
     res.status(500).send(e.message);
   });
 
-  // Handle request body if it exists
-  if (req.body) {
-    // If it's an object (happens via Vercel body parser), stringify it
-    // But OAuth token exchange usually sends form-urlencoded
-    const body = typeof req.body === 'string' ? req.body : JSON.stringify(req.body);
-    clientReq.write(body);
-  } else {
-    // If no body but still a POST/PUT, we might need to handle raw stream
-    req.pipe(clientReq);
-    return;
-  }
-
-  clientReq.end();
+  // Pipe raw request from the browser directly into the Salesforce request
+  req.pipe(clientReq);
 }
+
+// CRITICAL: Disable Vercel's body parser to allow raw stream piping
+export const config = {
+  api: {
+    bodyParser: false,
+  },
+};
