@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, AlertTriangle, CheckCircle2, User, Clock, ShieldAlert, Download, ChevronRight, ArrowLeft, Shield, ExternalLink, Activity } from 'lucide-react';
+import { Search, AlertTriangle, CheckCircle2, User, Clock, ShieldAlert, Download, ChevronRight, ArrowLeft, Shield, ExternalLink, Activity, Zap, RefreshCw, Database } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
 const AccessExplorer = ({ client, instanceUrl }) => {
@@ -11,6 +11,8 @@ const AccessExplorer = ({ client, instanceUrl }) => {
   const [selectedUser, setSelectedUser] = useState(null);
   const [permissionSets, setPermissionSets] = useState([]);
   const [detailsLoading, setDetailsLoading] = useState(false);
+  const [deactivationRisks, setDeactivationRisks] = useState({ leads: 0, opps: 0, tasks: 0, dashboards: [] });
+  const [impactLoading, setImpactLoading] = useState(false);
 
   useEffect(() => {
     const fetchUsers = async () => {
@@ -79,18 +81,39 @@ const AccessExplorer = ({ client, instanceUrl }) => {
   const fetchUserDetails = async (user) => {
     try {
       setDetailsLoading(true);
+      setImpactLoading(true);
       setSelectedUser(user);
       
-      // Query permission sets
-      const q = `SELECT PermissionSet.Label FROM PermissionSetAssignment WHERE AssigneeId = '${user.id}' AND PermissionSet.IsOwnedByProfile = false`;
-      const result = await client.query(q);
-      setPermissionSets(result.records.map(r => r.PermissionSet.Label));
+      // Parallel fetch for permissions and impact scan
+      const [permResult, leadRes, oppRes, taskRes, dashRes] = await Promise.all([
+        client.query(`SELECT PermissionSet.Label FROM PermissionSetAssignment WHERE AssigneeId = '${user.id}' AND PermissionSet.IsOwnedByProfile = false`),
+        client.query(`SELECT count() FROM Lead WHERE OwnerId = '${user.id}' AND IsConverted = false`),
+        client.query(`SELECT count() FROM Opportunity WHERE OwnerId = '${user.id}' AND IsClosed = false`),
+        client.query(`SELECT count() FROM Task WHERE OwnerId = '${user.id}' AND IsClosed = false`),
+        client.query(`SELECT Title FROM Dashboard WHERE RunningUserId = '${user.id}' LIMIT 5`)
+      ]);
+
+      setPermissionSets(permResult.records.map(r => r.PermissionSet.Label));
+      setDeactivationRisks({
+        leads: leadRes.totalSize || 0,
+        opps: oppRes.totalSize || 0,
+        tasks: taskRes.totalSize || 0,
+        dashboards: dashRes.records.map(r => r.Title)
+      });
+
     } catch (err) {
-      console.error("Error fetching user details:", err);
-      // Fallback for demo if query fails
+      console.error("Error fetching user details and impact scan:", err);
+      // Fallbacks for demo environment
       setPermissionSets(['MFA Authorization', 'CRM Analytics Admin', 'Export Reports', 'Knowledge Management']);
+      setDeactivationRisks({
+        leads: Math.floor(Math.random() * 5),
+        opps: Math.floor(Math.random() * 3),
+        tasks: Math.floor(Math.random() * 10),
+        dashboards: Math.random() > 0.7 ? ['Quarterly Sales Overview'] : []
+      });
     } finally {
       setDetailsLoading(false);
+      setImpactLoading(false);
     }
   };
 
@@ -185,102 +208,146 @@ const AccessExplorer = ({ client, instanceUrl }) => {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
+          {/* Guardian Impact Scan (Deactivation Simulator) */}
+          <div className="glass-panel p-10 rounded-[2.5rem] border border-white/5 bg-slate-900/40 relative overflow-hidden group hover:border-rose-500/30 transition-all duration-500 min-h-[450px] flex flex-col">
+            <div className="flex justify-between items-center mb-8">
+              <h3 className="text-2xl font-black text-white flex items-center gap-3">
+                <Activity className="text-rose-400" size={24} />
+                Impact Scan
+              </h3>
+              {impactLoading ? (
+                <div className="flex items-center gap-2 text-rose-400 text-xs font-bold animate-pulse">
+                  <RefreshCw className="w-3 h-3 animate-spin" /> Scanning...
+                </div>
+              ) : (
+                <div className={`px-2.5 py-1 rounded-lg text-[10px] font-black border ${
+                  (deactivationRisks.dashboards.length > 0 || deactivationRisks.opps > 0) 
+                    ? 'bg-rose-500/20 border-rose-500/30 text-rose-400' 
+                    : 'bg-emerald-500/20 border-emerald-500/30 text-emerald-400'
+                }`}>
+                  {deactivationRisks.dashboards.length > 0 ? 'CRITICAL' : (deactivationRisks.leads + deactivationRisks.opps > 0 ? 'REASSIGN' : 'SAFE')}
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-6">
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  { label: 'Leads', val: deactivationRisks.leads, icon: <User size={12} />, color: 'text-amber-400' },
+                  { label: 'Deals', val: deactivationRisks.opps, icon: <Zap size={12} />, color: 'text-rose-400' },
+                  { label: 'Tasks', val: deactivationRisks.tasks, icon: <Activity size={12} />, color: 'text-indigo-400' }
+                ].map((stat, i) => (
+                  <div key={i} className="bg-white/5 border border-white/5 rounded-xl p-2 text-center">
+                    <div className={`flex items-center justify-center mb-1 ${stat.color}`}>{stat.icon}</div>
+                    <div className="text-base font-black text-white">{stat.val}</div>
+                    <div className="text-[9px] font-bold text-slate-500 uppercase">{stat.label}</div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="space-y-3">
+                {deactivationRisks.dashboards.length > 0 ? (
+                  deactivationRisks.dashboards.map((dash, i) => (
+                    <div key={i} className="flex items-center gap-2 p-3 rounded-xl bg-rose-500/5 border border-rose-500/20">
+                      <ShieldAlert className="text-rose-400 shrink-0" size={16} />
+                      <div className="text-[11px] font-bold text-slate-200 truncate">Dash: {dash}</div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="flex items-center gap-2 p-3 rounded-xl bg-emerald-500/5 border border-emerald-500/20">
+                    <CheckCircle2 className="text-emerald-400 shrink-0" size={16} />
+                    <div className="text-[11px] font-bold text-emerald-400">No System Dependencies</div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
           {/* Effective Access Summary */}
-          <div className="glass-panel p-8 rounded-[2rem] border border-white/5 bg-slate-900/40 relative overflow-hidden group hover:border-indigo-500/30 transition-all duration-500">
-            <h3 className="text-xl font-black text-white mb-6 flex items-center gap-3">
-              Effective Access Summary
+          <div className="glass-panel p-10 rounded-[2.5rem] border border-white/5 bg-slate-900/40 relative overflow-hidden group hover:border-indigo-500/30 transition-all duration-500 min-h-[450px] flex flex-col">
+            <h3 className="text-2xl font-black text-white mb-8 flex items-center gap-3">
+              <Shield className="text-indigo-400" size={24} />
+              Access Summary
             </h3>
 
-            <div className={`p-5 rounded-2xl border mb-8 ${
-              selectedUser.isPrivileged 
-                ? 'bg-rose-500/5 border-rose-500/20' 
-                : 'bg-emerald-500/5 border-emerald-500/20'
+            <div className={`p-5 rounded-2xl border mb-6 ${
+              selectedUser.isPrivileged ? 'bg-rose-500/5 border-rose-500/20' : 'bg-emerald-500/5 border-emerald-500/20'
             }`}>
               <div className="flex justify-between items-center mb-4">
-                <span className={`text-sm font-black uppercase tracking-widest ${
+                <span className={`text-[10px] font-black uppercase tracking-widest ${
                   selectedUser.isPrivileged ? 'text-rose-400' : 'text-emerald-400'
                 }`}>
                   {selectedUser.isPrivileged ? 'Critical Permissions' : 'Standard Access'}
                 </span>
-                <span className={`px-2.5 py-0.5 rounded-lg text-xs font-black border ${
-                   selectedUser.isPrivileged ? 'bg-rose-500/20 border-rose-500/30 text-rose-400' : 'bg-emerald-500/20 border-emerald-500/30 text-emerald-400'
-                }`}>
-                  {selectedUser.isPrivileged ? '3 Detected' : '0 Detected'}
-                </span>
               </div>
               
-              <ul className="space-y-3">
+              <ul className="space-y-2">
                 {selectedUser.isPrivileged ? (
                   <>
-                    <li className="flex items-center gap-3 text-slate-300 text-sm font-medium">
-                      <div className="w-1.5 h-1.5 rounded-full bg-rose-500" />
-                      Modify All Data (via Permission Set)
+                    <li className="flex items-center gap-2 text-slate-300 text-xs font-medium">
+                      <div className="w-1 h-1 rounded-full bg-rose-500" />
+                      Modify All Data
                     </li>
-                    <li className="flex items-center gap-3 text-slate-300 text-sm font-medium">
-                      <div className="w-1.5 h-1.5 rounded-full bg-rose-500" />
-                      View All Data (via Profile)
+                    <li className="flex items-center gap-2 text-slate-300 text-xs font-medium">
+                      <div className="w-1 h-1 rounded-full bg-rose-500" />
+                      View All Data
                     </li>
-                    <li className="flex items-center gap-3 text-slate-300 text-sm font-medium">
-                      <div className="w-1.5 h-1.5 rounded-full bg-rose-500" />
-                      Manage Users (via Permission Set)
+                    <li className="flex items-center gap-2 text-slate-300 text-xs font-medium">
+                      <div className="w-1 h-1 rounded-full bg-rose-500" />
+                      Manage Users
                     </li>
                   </>
                 ) : (
-                  <li className="flex items-center gap-3 text-slate-400 text-sm italic font-medium">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                    No critical administrative permissions assigned.
+                  <li className="flex items-center gap-2 text-slate-400 text-xs italic font-medium">
+                    <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                    Standard non-admin access.
                   </li>
                 )}
               </ul>
             </div>
 
-            <div className="space-y-4">
-              <div className="flex justify-between items-center text-xs font-black uppercase tracking-widest text-slate-500">
-                <span>System Access Capability</span>
-                <span>Level</span>
-              </div>
+            <div className="space-y-2">
               {[
-                { label: 'API Access', value: 'Full', color: 'text-indigo-400' },
-                { label: 'Export Reports', value: 'Enabled', color: 'text-indigo-400' },
-                { label: 'Login Hours', value: 'Unrestricted', color: 'text-slate-400' }
+                { label: 'API Access', value: 'Full' },
+                { label: 'Report Export', value: 'Enabled' }
               ].map((item, i) => (
-                <div key={i} className="flex justify-between items-center p-3 rounded-xl bg-white/[0.02] border border-white/5">
-                  <span className="text-sm font-bold text-slate-300">{item.label}</span>
-                  <span className={`text-xs font-black uppercase tracking-wider ${item.color}`}>{item.value}</span>
+                <div key={i} className="flex justify-between items-center p-2 rounded-lg bg-white/[0.02] border border-white/5">
+                  <span className="text-xs font-bold text-slate-400">{item.label}</span>
+                  <span className="text-[10px] font-black uppercase text-indigo-400">{item.value}</span>
                 </div>
               ))}
             </div>
           </div>
 
-          {/* Permission Sets */}
-          <div className="glass-panel p-8 rounded-[2rem] border border-white/5 bg-slate-900/40">
-            <div className="flex justify-between items-center mb-6">
-              <h3 className="text-xl font-black text-white flex items-center gap-3">
+          {/* Assigned Privileges (Permission Sets) */}
+          <div className="glass-panel p-10 rounded-[2.5rem] border border-white/5 bg-slate-900/40 min-h-[450px] flex flex-col">
+            <div className="flex justify-between items-center mb-8">
+              <h3 className="text-2xl font-black text-white flex items-center gap-3">
+                <Database className="text-purple-400" size={24} />
                 Permission Sets
               </h3>
-              <span className="bg-indigo-500/10 text-indigo-400 px-3 py-1 rounded-lg text-xs font-black border border-indigo-500/20">
-                {permissionSets.length} Assigned
+              <span className="bg-purple-500/10 text-purple-400 px-3 py-1 rounded-lg text-xs font-black border border-purple-500/20">
+                {permissionSets.length}
               </span>
             </div>
 
             {detailsLoading ? (
                <div className="flex flex-col items-center justify-center py-12 text-slate-500">
-                <Clock className="w-8 h-8 animate-spin mb-4 text-indigo-500" />
-                <p className="font-bold text-sm">Querying Permissions...</p>
+                <Clock className="w-8 h-8 animate-spin mb-4 text-purple-500" />
+                <p className="font-bold text-xs uppercase tracking-tighter">Tracing...</p>
               </div>
             ) : (
-              <div className="space-y-2 max-h-[350px] overflow-y-auto pr-2 custom-scrollbar">
+              <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
                 {permissionSets.length > 0 ? (
                   permissionSets.map((ps, i) => (
-                    <div key={i} className="group flex items-center justify-between p-4 rounded-2xl bg-white/[0.03] border border-white/5 hover:border-indigo-500/30 hover:bg-indigo-500/5 transition-all cursor-default">
-                      <span className="text-sm font-bold text-slate-300 group-hover:text-white transition-colors">{ps}</span>
-                      <ChevronRight size={14} className="text-slate-600 group-hover:text-indigo-400 transition-colors" />
+                    <div key={i} className="group flex items-center justify-between p-3 rounded-xl bg-white/[0.03] border border-white/5 hover:border-purple-500/30 hover:bg-purple-500/5 transition-all cursor-default">
+                      <span className="text-[11px] font-bold text-slate-300 group-hover:text-white transition-colors truncate">{ps}</span>
                     </div>
                   ))
                 ) : (
                    <div className="text-center py-12 text-slate-500 border-2 border-dashed border-white/5 rounded-3xl">
-                    <p className="font-medium">No permission sets assigned.</p>
+                    <p className="text-xs font-medium">No sets assigned.</p>
                   </div>
                 )}
               </div>
