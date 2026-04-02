@@ -49,3 +49,20 @@ export const getGroupIcon = (name) => {
   if (name.includes('Network')) return <Zap className="w-5 h-5 text-purple-400 opacity-90" />;
   return <Activity className="w-5 h-5 text-slate-400 opacity-90" />;
 };
+
+export const generateDestructiveXML = (items, metadataType) => {
+  if (!items || items.length === 0) return null;
+  
+  // Standard members are the developer name (Name field for PermSets)
+  // FALLBACK: Use Id if Name/DeveloperName is missing (common for Files, Users, etc.)
+  const members = items.map(item => `    <members>${item.Name || item.DeveloperName || item.Id}</members>`).join('\n');
+  
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <types>
+${members}
+        <name>${metadataType}</name>
+    </types>
+    <version>60.0</version>
+</Package>`;
+};

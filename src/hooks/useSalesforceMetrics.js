@@ -45,7 +45,7 @@ const useSalesforceMetrics = (client) => {
 
         // 2. Never Logged In
         tryFetch('never-login', 'Identity & Access', 'Users Never Logged In', 'Active users who never accessed the system.', 6,
-          () => client.query("SELECT Name, Email, CreatedDate, Profile.Name FROM User WHERE IsActive = true AND LastLoginDate = null AND UserType = 'Standard'"),
+          () => client.query("SELECT Id, Name, Email, CreatedDate, Profile.Name FROM User WHERE IsActive = true AND LastLoginDate = null AND UserType = 'Standard'"),
           (res) => {
             const count = res.totalSize;
             let pts = 0; let status = 'Healthy';
@@ -56,7 +56,7 @@ const useSalesforceMetrics = (client) => {
 
         // 3. Stale Passwords
         tryFetch('stale-passwords', 'Identity & Access', 'Stale Passwords', 'Users who haven\'t changed password in 90+ days.', 6,
-          () => client.query("SELECT Name, LastPasswordChangeDate, Profile.Name FROM User WHERE IsActive = true AND UserType = 'Standard' AND LastPasswordChangeDate < LAST_N_DAYS:90"),
+          () => client.query("SELECT Id, Name, LastPasswordChangeDate, Profile.Name FROM User WHERE IsActive = true AND UserType = 'Standard' AND LastPasswordChangeDate < LAST_N_DAYS:90"),
           (res) => {
             const count = res.totalSize;
             let pts = 0; let status = 'Healthy';
@@ -67,7 +67,7 @@ const useSalesforceMetrics = (client) => {
 
         // 4. External Users
         tryFetch('external-users', 'Identity & Access', 'External Users', 'Community or external users with access.', 6,
-          () => client.query("SELECT Name, Email, Profile.Name, UserType, LastLoginDate FROM User WHERE IsActive = true AND UserType NOT IN ('Standard', 'AutomatedProcess', 'CloudIntegrationUser') LIMIT 100"),
+          () => client.query("SELECT Id, Name, Email, Profile.Name, UserType, LastLoginDate FROM User WHERE IsActive = true AND UserType NOT IN ('Standard', 'AutomatedProcess', 'CloudIntegrationUser') LIMIT 100"),
           (res) => {
             const count = res.totalSize;
             return { value: count, status: count > 30 ? 'At Risk' : count > 0 ? 'Moderate' : 'Healthy', points: count > 0 ? 4 : 6, drillDownData: res.records };
@@ -112,13 +112,13 @@ const useSalesforceMetrics = (client) => {
 
         // 6. Setup Audit Trail
         tryFetch('setup-volatility', 'Auditability & Monitoring', 'Setup Activity (30d)', 'Measures configuration changes.', 10,
-          () => client.query("SELECT CreatedDate, Display, DelegateUser, Action, Section FROM SetupAuditTrail WHERE CreatedDate = LAST_N_DAYS:30 LIMIT 5"),
+          () => client.query("SELECT Id, CreatedDate, Display, DelegateUser, Action, Section FROM SetupAuditTrail WHERE CreatedDate = LAST_N_DAYS:30 LIMIT 5"),
           (res) => ({ value: res.totalSize, status: res.totalSize > 100 ? 'Moderate' : 'Healthy', points: res.totalSize > 100 ? 5 : 10, drillDownData: res.records })
         ),
 
         // 6b. Admin Impersonation
         tryFetch('admin-impersonation', 'Auditability & Monitoring', 'Login-As Events', 'Admins impersonating users.', 5,
-          () => client.query("SELECT CreatedDate, CreatedById, Display, Action, Section, DelegateUser FROM SetupAuditTrail WHERE Action LIKE 'suOrgAdminLogin%' LIMIT 50"),
+          () => client.query("SELECT Id, CreatedDate, CreatedById, Display, Action, Section, DelegateUser FROM SetupAuditTrail WHERE Action LIKE 'suOrgAdminLogin%' LIMIT 50"),
           (res) => {
             const count = res.records.length;
             return { value: count, status: count === 0 ? 'Healthy' : count <= 5 ? 'Moderate' : 'At Risk', points: count === 0 ? 5 : count <= 5 ? 3 : 0, drillDownData: res.records };
@@ -127,7 +127,7 @@ const useSalesforceMetrics = (client) => {
 
         // 6c. Password Lockouts
         tryFetch('password-lockouts', 'Auditability & Monitoring', 'Password Lockouts (7d)', 'Recent lockout events.', 5,
-          () => client.query("SELECT UserId, LoginTime, SourceIp, Browser, Status FROM LoginHistory WHERE LoginTime = LAST_N_DAYS:7 ORDER BY LoginTime DESC LIMIT 2000"),
+          () => client.query("SELECT Id, UserId, LoginTime, SourceIp, Browser, Status FROM LoginHistory WHERE LoginTime = LAST_N_DAYS:7 ORDER BY LoginTime DESC LIMIT 2000"),
           (res) => {
             const records = res.records.filter(r => r.Status && r.Status.includes('Password Lockout'));
             const count = records.length;
@@ -155,7 +155,7 @@ const useSalesforceMetrics = (client) => {
           async () => {
             const [limits, oldestFiles] = await Promise.all([
               client.getLimits(),
-              client.query("SELECT Title, ContentSize, LastModifiedDate FROM ContentVersion WHERE IsLatest = true ORDER BY LastModifiedDate ASC LIMIT 5")
+              client.query("SELECT Id, Title, ContentSize, LastModifiedDate FROM ContentVersion WHERE IsLatest = true ORDER BY LastModifiedDate ASC LIMIT 5")
             ]);
             return { limits, oldestFiles: oldestFiles.records };
           },
@@ -173,7 +173,8 @@ const useSalesforceMetrics = (client) => {
               status: st, 
               points: pts,
               drillDownData: oldestFiles,
-              showCleanupIcon: true
+              showCleanupIcon: true,
+              metadataType: 'ContentDocument'
             };
           }
         ),
@@ -191,7 +192,7 @@ const useSalesforceMetrics = (client) => {
 
         // 7d. Roles with No Users
         tryFetch('empty-roles', 'Governance & Utilization', 'Roles with No Users', 'Empty hierarchy roles.', 5,
-          () => client.query("SELECT Name FROM UserRole WHERE Id NOT IN (SELECT UserRoleId FROM User WHERE IsActive = true) LIMIT 100"),
+          () => client.query("SELECT Id, Name FROM UserRole WHERE Id NOT IN (SELECT UserRoleId FROM User WHERE IsActive = true) LIMIT 100"),
           (res) => {
             const count = res.totalSize;
             let pts = 5; let st = 'Healthy';
@@ -202,7 +203,7 @@ const useSalesforceMetrics = (client) => {
 
         // 8. API Only Accounts
         tryFetch('api-users', 'Network & Integrations', 'API-Only Accounts', 'Dedicated API integration users.', 5,
-          () => client.query("SELECT Name, Email, Profile.Name, LastLoginDate FROM User WHERE Profile.PermissionsApiUserOnly = true AND IsActive = true"),
+          () => client.query("SELECT Id, Name, Email, Profile.Name, LastLoginDate FROM User WHERE Profile.PermissionsApiUserOnly = true AND IsActive = true"),
           (res) => {
             const count = res.totalSize;
             return { value: count, status: count > 10 ? 'Moderate' : 'Healthy', points: count > 10 ? 2 : 5, drillDownData: res.records };
@@ -211,7 +212,7 @@ const useSalesforceMetrics = (client) => {
 
         // 9. Active OAuth Sessions
         tryFetch('oauth-sessions', 'Network & Integrations', 'Active OAuth Apps', 'Current active OAuth 2.0 sessions.', 5,
-          () => client.query("SELECT Users.Name, SessionType, SourceIp, CreatedDate FROM AuthSession WHERE SessionType = 'Oauth2' LIMIT 50"),
+          () => client.query("SELECT Id, Users.Name, SessionType, SourceIp, CreatedDate FROM AuthSession WHERE SessionType = 'Oauth2' LIMIT 50"),
           (res) => {
             const count = res.totalSize || res.records.length;
             return { value: count, status: count > 20 ? 'At Risk' : 'Healthy', points: count > 20 ? 2 : 5, drillDownData: res.records };
@@ -220,7 +221,7 @@ const useSalesforceMetrics = (client) => {
         
         // 10. Remote Site Settings Hygiene
         tryFetch('outbound-security', 'Network & Integrations', 'Remote Site Hygiene', 'Active outbound endpoints allowed in this Org.', 5,
-          () => client.query("SELECT SiteName, Endpoint, IsActive FROM RemoteProxy WHERE IsActive = true LIMIT 100"),
+          () => client.query("SELECT Id, SiteName, Endpoint, IsActive FROM RemoteProxy WHERE IsActive = true LIMIT 100"),
           (res) => {
             const count = res.totalSize || res.records.length;
             let pts = 5; let st = 'Healthy';
@@ -245,12 +246,19 @@ const useSalesforceMetrics = (client) => {
             const assignedIds = new Set(assignments.records.map(a => a.PermissionSetId));
             return allSets.records.filter(s => !assignedIds.has(s.Id));
           },
-          (orphans) => ({ value: orphans.length, status: orphans.length > 50 ? 'At Risk' : 'Healthy', points: orphans.length > 50 ? 2 : 5, drillDownData: orphans })
+          (orphans) => ({ 
+            value: orphans.length, 
+            status: orphans.length > 50 ? 'At Risk' : 'Healthy', 
+            points: orphans.length > 50 ? 2 : 5, 
+            drillDownData: orphans,
+            showCleanupIcon: true,
+            metadataType: 'PermissionSet'
+          })
         ),
 
         // Identity Governance Gap (E-3)
         tryFetch('manager-gap', 'Governance & Utilization', 'Identity Governance Gap', 'Active standard users with no Manager assigned.', 5,
-          () => client.query("SELECT Name, Email, Title FROM User WHERE IsActive = true AND UserType = 'Standard' AND ManagerId = null"),
+          () => client.query("SELECT Id, Name, Email, Title FROM User WHERE IsActive = true AND UserType = 'Standard' AND ManagerId = null"),
           (res) => ({ value: res.totalSize, status: res.totalSize > 2 ? 'At Risk' : 'Healthy', points: res.totalSize > 2 ? 2 : 5, drillDownData: res.records })
         )
       ]);

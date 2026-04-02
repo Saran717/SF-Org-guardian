@@ -4,13 +4,13 @@ import useSalesforceMetrics from './hooks/useSalesforceMetrics';
 import MetricCard from './MetricCard.jsx';
 import { 
   Shield, RefreshCw, LogOut, ChevronRight, Activity, Zap, 
-  Server, X, Download, Moon, Sun, ShieldAlert, History, AlertTriangle
+  Server, X, Download, Moon, Sun, ShieldAlert, History, AlertTriangle, Sparkles, Search
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import AccessExplorer from './AccessExplorer.jsx';
 import LoginView from './components/LoginView.jsx';
 import SecurityFindings from './SecurityFindings.jsx';
-import { formatCellValue, getScoreGradient, getScoreColor, getScoreBgColor, getGroupIcon } from './utils/formatters.jsx';
+import { formatCellValue, getScoreGradient, getScoreColor, getScoreBgColor, getGroupIcon, generateDestructiveXML } from './utils/formatters.jsx';
 
 const DEFAULT_REDIRECT_URI = window.location.origin + '/callback';
 
@@ -33,7 +33,9 @@ function App() {
   const [manualCode, setManualCode] = useState('');
   const [activeGroup, setActiveGroup] = useState(null);
   const [mainTab, setMainTab] = useState('Overview');
-  const [isLightMode, setIsLightMode] = useState(true);
+  const [isLightMode, setIsLightMode] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedIds, setSelectedIds] = useState([]);
   
   // Custom Salesforce App Configuration
   const [clientId, setClientId] = useState(sessionStorage.getItem('sf_client_id') || '');
@@ -42,10 +44,10 @@ function App() {
   const [password, setPassword] = useState('');
 
   useEffect(() => {
-    if (!isLightMode) {
-      document.documentElement.classList.add('dark');
+    if (isLightMode) {
+      document.documentElement.classList.add('light');
     } else {
-      document.documentElement.classList.remove('dark');
+      document.documentElement.classList.remove('light');
     }
   }, [isLightMode]);
 
@@ -181,6 +183,11 @@ function App() {
     }
   }, [groupData, activeGroup]);
 
+  useEffect(() => {
+    setSearchTerm('');
+    setSelectedIds([]);
+  }, [selectedMetric]);
+
   const handleGenerateUrl = async () => {
     const loginUrl = env === 'custom' ? customUrl.trim() : ENVS[env].loginUrl;
     if (!loginUrl) { alert('Please enter a custom login URL.'); return; }
@@ -277,6 +284,27 @@ function App() {
     XLSX.utils.book_append_sheet(workbook, worksheet, "Metric Data");
     worksheet['!cols'] = formattedHeaders.map(h => ({ wch: Math.max(h.length, 25) }));
     XLSX.writeFile(workbook, `${selectedMetric.id}-export.xlsx`);
+  };
+
+  const handleGenerateCleanup = () => {
+    if (!selectedMetric || !selectedMetric.drillDownData || !selectedMetric.metadataType) return;
+    
+    // Only cleanup selected items
+    const itemsToCleanup = selectedMetric.drillDownData.filter(item => selectedIds.includes(item.Id));
+    
+    if (itemsToCleanup.length === 0) {
+      alert("Please select at least one item to cleanup.");
+      return;
+    }
+
+    const xml = generateDestructiveXML(itemsToCleanup, selectedMetric.metadataType);
+    const blob = new Blob([xml], { type: 'text/xml' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `destructiveChanges-${selectedMetric.id}.xml`;
+    a.click();
+    window.URL.revokeObjectURL(url);
   };
 
   if (!client) {
@@ -497,39 +525,103 @@ function App() {
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-md animate-fade-in" onClick={() => setSelectedMetric(null)}></div>
           <div className="bg-slate-900 border border-white/10 w-full max-w-6xl max-h-[85vh] rounded-3xl overflow-hidden shadow-2xl relative z-10 animate-fade-in-up flex flex-col">
-            <div className="p-6 border-b border-white/5 flex justify-between items-center bg-slate-900/50 backdrop-blur-md">
-              <div>
+            <div className="p-6 border-b border-white/5 flex flex-col md:flex-row md:items-center justify-between gap-6 bg-slate-900/50 backdrop-blur-md">
+              <div className="flex-1">
                 <h3 className="text-xl font-black text-white">{selectedMetric.title}</h3>
                 <p className="text-slate-400 text-sm font-medium">{selectedMetric.description}</p>
               </div>
-              <div className="flex items-center gap-3">
-                <button onClick={handleExportData} className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-sm font-bold transition-all"><Download size={16} /> Export Excel</button>
-                <button onClick={() => setSelectedMetric(null)} className="p-2 text-slate-400 hover:text-white hover:bg-white/5 rounded-xl transition-all"><X size={20} /></button>
+
+              <div className="flex flex-wrap items-center gap-4">
+                {/* Search Bar */}
+                <div className="relative group">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 group-focus-within:text-indigo-400 transition-colors" />
+                  <input 
+                    type="text" 
+                    placeholder="Filter results..." 
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="bg-white/5 border border-white/10 rounded-xl pl-10 pr-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/20 transition-all w-64"
+                  />
+                </div>
+
+                <div className="flex items-center gap-2">
+                  {selectedMetric.showCleanupIcon && (
+                    <button 
+                      onClick={handleGenerateCleanup} 
+                      disabled={selectedIds.length === 0}
+                      className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:hover:bg-indigo-600 text-white rounded-xl text-sm font-black transition-all shadow-lg shadow-indigo-500/20 active:scale-95"
+                    >
+                      <Sparkles size={16} /> Cleanup ({selectedIds.length})
+                    </button>
+                  )}
+                  <button onClick={handleExportData} className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-sm font-bold transition-all"><Download size={16} /> Export Excel</button>
+                  <button onClick={() => setSelectedMetric(null)} className="p-2 text-slate-400 hover:text-white hover:bg-white/5 rounded-xl transition-all"><X size={20} /></button>
+                </div>
               </div>
             </div>
+
             <div className="flex-1 overflow-auto p-6 scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent">
-              {selectedMetric.drillDownData && selectedMetric.drillDownData.length > 0 ? (
-                <table className="w-full text-left border-separate border-spacing-y-2">
-                  <thead>
-                    <tr className="text-slate-400 text-[10px] uppercase tracking-widest font-black">
-                      {Object.keys(selectedMetric.drillDownData[0]).filter(k => k !== 'attributes' && k !== 'Id').map(key => (
-                        <th key={key} className="px-4 py-2">{key.replace(/([A-Z])/g, ' $1').replace(/_/g, ' ').trim()}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="text-sm font-medium">
-                    {selectedMetric.drillDownData.map((row, i) => (
-                      <tr key={i} className="bg-white/[0.02] border border-white/5 rounded-xl hover:bg-white/[0.05] transition-colors">
-                        {Object.keys(row).filter(k => k !== 'attributes' && k !== 'Id').map(col => (
-                          <td key={col} className="px-4 py-4 text-slate-300 first:rounded-l-xl last:rounded-r-xl border-y border-white/5 first:border-l last:border-r">
-                            {formatCellValue(col, row[col])}
-                          </td>
+              {selectedMetric.drillDownData && selectedMetric.drillDownData.length > 0 ? (() => {
+                const filtered = selectedMetric.drillDownData.filter(row => 
+                  Object.values(row).some(val => 
+                    String(val).toLowerCase().includes(searchTerm.toLowerCase())
+                  )
+                );
+
+                const allFilteredSelected = filtered.length > 0 && filtered.every(r => selectedIds.includes(r.Id));
+
+                const toggleSelectAll = () => {
+                  if (allFilteredSelected) {
+                    setSelectedIds(prev => prev.filter(id => !filtered.some(f => f.Id === id)));
+                  } else {
+                    const newIds = filtered.map(f => f.Id).filter(id => !selectedIds.includes(id));
+                    setSelectedIds(prev => [...prev, ...newIds]);
+                  }
+                };
+
+                return (
+                  <table className="w-full text-left border-separate border-spacing-y-2">
+                    <thead>
+                      <tr className="text-slate-400 text-[10px] uppercase tracking-widest font-black">
+                        <th className="px-4 py-2 w-10">
+                          <input 
+                            type="checkbox" 
+                            checked={allFilteredSelected}
+                            onChange={toggleSelectAll}
+                            className="w-4 h-4 rounded border-white/10 bg-white/5 checked:bg-indigo-500 transition-all cursor-pointer accent-indigo-500"
+                          />
+                        </th>
+                        {Object.keys(selectedMetric.drillDownData[0]).filter(k => k !== 'attributes' && k !== 'Id').map(key => (
+                          <th key={key} className="px-4 py-2">{key.replace(/([A-Z])/g, ' $1').replace(/_/g, ' ').trim()}</th>
                         ))}
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              ) : (
+                    </thead>
+                    <tbody className="text-sm font-medium">
+                      {filtered.map((row, i) => (
+                        <tr key={i} className={`group border border-white/5 rounded-xl transition-colors ${selectedIds.includes(row.Id) ? 'bg-indigo-500/10' : 'bg-white/[0.02] hover:bg-white/[0.05]'}`}>
+                          <td className="px-4 py-4 first:rounded-l-xl border-y border-white/5 first:border-l">
+                            <input 
+                              type="checkbox" 
+                              checked={selectedIds.includes(row.Id)}
+                              onChange={() => {
+                                setSelectedIds(prev => 
+                                  prev.includes(row.Id) ? prev.filter(id => id !== row.Id) : [...prev, row.Id]
+                                );
+                              }}
+                              className="w-4 h-4 rounded border-white/10 bg-white/5 checked:bg-indigo-500 transition-all cursor-pointer accent-indigo-500"
+                            />
+                          </td>
+                          {Object.keys(row).filter(k => k !== 'attributes' && k !== 'Id').map(col => (
+                            <td key={col} className="px-4 py-4 text-slate-300 last:rounded-r-xl border-y border-white/5 last:border-r">
+                              {formatCellValue(col, row[col])}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                );
+              })() : (
                 <div className="flex flex-col items-center justify-center py-20 text-center">
                   <div className="w-16 h-16 bg-slate-800/50 rounded-full flex items-center justify-center mb-4">
                     <Shield className="text-slate-500" size={32} />
