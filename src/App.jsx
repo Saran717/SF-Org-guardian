@@ -184,6 +184,13 @@ function App() {
   }, [groupData, activeGroup]);
 
   useEffect(() => {
+    if (error && error.includes('AUTH_EXPIRED')) {
+      console.warn("Salesforce session expired. Redirecting to login...");
+      handleLogout();
+    }
+  }, [error]);
+
+  useEffect(() => {
     setSearchTerm('');
     setSelectedIds([]);
   }, [selectedMetric]);

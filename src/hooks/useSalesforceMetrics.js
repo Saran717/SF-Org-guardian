@@ -20,11 +20,17 @@ const useSalesforceMetrics = (client) => {
           const metric = transformFn(rawData);
           return { id, group, title, description, maxPoints, ...metric };
         } catch (err) {
-          console.warn(`Metric ${id} failed:`, err.message);
+          const msg = err.message || "";
+          // Check for session-specific errors to trigger a global logout
+          if (msg.includes('INVALID_SESSION_ID') || msg.includes('Session expired') || msg.includes('401')) {
+            throw new Error('AUTH_EXPIRED');
+          }
+          
+          console.warn(`Metric ${id} failed:`, msg);
           return {
             id, group, title, description, maxPoints,
             value: 'N/A', status: 'Healthy', points: maxPoints, 
-            error: err.message
+            error: msg
           };
         }
       };
